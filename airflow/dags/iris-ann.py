@@ -64,9 +64,11 @@ class IrisAnn:
             self.hidden_weights += X_train.T.dot(hidden_delta) * learning_rate
             self.hidden_bias += np.sum(hidden_delta, axis=0, keepdims=True) * learning_rate
 
-    def export_models(self, output_path):
+    def export_models(self, output_path, output_path_api):
         with open(output_path, 'wb') as f:
             pickle.dump(self, f)
+        with open(output_path_api, 'wb') as f:
+            pickle.dump([self.hidden_weights, self.hidden_bias, self.output_weights, self.output_bias], f)
 
     def test_accuracy(self, X_test, y_test):
         hidden_layer_activation = np.dot(X_test, self.hidden_weights) + self.hidden_bias
@@ -115,7 +117,8 @@ def run_pipeline():
         X_train, X_test, y_train, y_test = iris_ann.split_data(X, y, test_size=0.2, random_state=42)
         iris_ann.train(X_train, y_train, learning_rate=0.1, epochs=1000)
         export_path = 'dags/models/iris_ann.pkl'
-        iris_ann.export_models(export_path)
+        export_path_api = 'dags/models/iris_ann_api.pkl'
+        iris_ann.export_models(export_path, export_path_api)
 
     @task()
     def get_data():
@@ -138,7 +141,6 @@ def run_pipeline():
         result = iris_ann.predict(X)
         conn = PostgresHook(postgres_conn_id='local_postgres').get_conn()
         cursor = conn.cursor()
-        cursor.execute('CREATE TABLE IF NOT EXISTS predictions (id SERIAL PRIMARY KEY, prediction INTEGER)')
         for idx, data in zip(index, result):
             cursor.execute(f'INSERT INTO output_data (executed_at, id, class) VALUES (now(), {idx}, {data})')
         conn.commit()
