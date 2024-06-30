@@ -26,12 +26,12 @@ docker-compose -f airflow-server.yaml up -d
 ```
 3. Open the browser and go to `http://localhost:8080/` to access the Airflow UI
 4. Create a new connection with the following configuration
-    - Conn Id: `postgres_conn`
+    - Conn Id: `local_postgres`
     - Conn Type: `Postgres`
     - Host: `postgres`
-    - Schema: `postgres`
-    - Login: `postgres`
-    - Password: `postgres`
+    - Schema: `iris_ann`
+    - Login: `apps_user`
+    - Password: `apps_user`
     - Port: `5432`
 6. Open dag named TrainingAndPredictionPipeline
 7. Turn on the dag and schedule the dag to run every day at 10am
