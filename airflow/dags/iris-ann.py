@@ -119,15 +119,19 @@ def run_pipeline():
         export_path = 'dags/models/iris_ann.pkl'
         export_path_api = 'dags/models/iris_ann_api.pkl'
         iris_ann.export_models(export_path, export_path_api)
+        return True
 
     @task()
-    def get_data():
-        print('start getting data')
-        conn = PostgresHook(postgres_conn_id='local_postgres').get_conn()
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM input_data')
-        data = cursor.fetchall()
-        return data
+    def get_data(train):
+        if train:
+            print('start getting data')
+            conn = PostgresHook(postgres_conn_id='local_postgres').get_conn()
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM input_data')
+            data = cursor.fetchall()
+            return data
+        else:
+            return 'Not trained yet'
 
     @task()
     def predict(data):
@@ -146,9 +150,9 @@ def run_pipeline():
         conn.commit()
         conn.close()
 
-    train_model()
-    data = get_data()
-    predict(data)
+    train = train_model()
+    data = get_data(train)
+    result = predict(data)
 
 
 run_pipeline()
