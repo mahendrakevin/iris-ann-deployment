@@ -1,8 +1,10 @@
+from datetime import datetime
 import numpy as np
 from sklearn import datasets
 from sklearn.model_selection import train_test_split
 import pickle
 from airflow.decorators import dag, task
+from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 
 class IrisAnn:
@@ -88,14 +90,63 @@ class IrisAnn:
         return result
 
 
-iris_ann = IrisAnn()
-iris = iris_ann.load_data()
-X = iris.data
-X = iris_ann.normalize_data(X)
-y = iris.target
-y = iris_ann.one_hot_encode(y)
-X_train, X_test, y_train, y_test = iris_ann.split_data(X, y, test_size=0.2, random_state=42)
-iris_ann.train(X_train, y_train, learning_rate=0.1, epochs=1000)
-export_path = 'models/iris_ann.pkl'
-iris_ann.export_models(export_path)
+default_args = {
+    'owner': 'airflow',
+    'start_date': datetime(2024, 6, 1),
+}
 
+
+@dag(
+    'TrainingAndPredictionPipeline',
+    default_args=default_args,
+    description='Train and Predict Iris dataset using ANN',
+    schedule_interval='0 10 * * *',  # This schedules the DAG to run at 10 AM every day
+)
+def run_pipeline():
+    @task()
+    def train_model():
+        print('start training')
+        iris_ann = IrisAnn()
+        iris = iris_ann.load_data()
+        X = iris.data
+        X = iris_ann.normalize_data(X)
+        y = iris.target
+        y = iris_ann.one_hot_encode(y)
+        X_train, X_test, y_train, y_test = iris_ann.split_data(X, y, test_size=0.2, random_state=42)
+        iris_ann.train(X_train, y_train, learning_rate=0.1, epochs=1000)
+        export_path = 'dags/models/iris_ann.pkl'
+        iris_ann.export_models(export_path)
+
+    @task()
+    def get_data():
+        print('start getting data')
+        conn = PostgresHook(postgres_conn_id='local_postgres').get_conn()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM input_data')
+        data = cursor.fetchall()
+        return data
+
+    @task()
+    def predict(data):
+        print('start prediction')
+        with open('dags/models/iris_ann.pkl', 'rb') as f:
+            iris_ann = pickle.load(f)
+        index = [x[0] for x in data]
+        payload = [x[1:] for x in data]
+        X = np.array(payload)
+        X = iris_ann.normalize_data(X)
+        result = iris_ann.predict(X)
+        conn = PostgresHook(postgres_conn_id='local_postgres').get_conn()
+        cursor = conn.cursor()
+        cursor.execute('CREATE TABLE IF NOT EXISTS predictions (id SERIAL PRIMARY KEY, prediction INTEGER)')
+        for idx, data in zip(index, result):
+            cursor.execute(f'INSERT INTO output_data (executed_at, id, class) VALUES (now(), {idx}, {data})')
+        conn.commit()
+        conn.close()
+
+    train_model()
+    data = get_data()
+    predict(data)
+
+
+run_pipeline()
